@@ -18,16 +18,6 @@ automatic light/dark theming.
 md [file]
 ```
 
-## Releasing
-
-- Ensure changes follow Conventional Commits so `release-it` can build clean
-  changelog entries.
-- Run `bun run release` locally with `GITHUB_TOKEN` and `NPM_TOKEN` in the
-  environment to tag, publish to npm, and update `CHANGELOG.md`, or trigger the
-  **Release** workflow from GitHub Actions with a version input.
-- Use the **Changelog Preview** workflow to generate release notes for review
-  without publishing.
-
 ## License
 
 MIT

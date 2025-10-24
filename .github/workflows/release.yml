@@ -13,11 +13,24 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - run: |
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - run: bun install --frozen-lockfile
-      - run: bunx release-it --ci
+      - run: bun run build
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+          registry-url: "https://registry.npmjs.org"
+
+      # OIDC requires npm v11.5.1 or later
+      - run: npm install -g npm@latest
+      - run: npx release-it --ci
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

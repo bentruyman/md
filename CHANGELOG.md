@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.3](https://github.com/bentruyman/md/compare/0.1.2...0.1.3) (2025-10-24)
+
+### Bad Release
+
+Just ignore this release...
+
 ## [0.1.2](https://github.com/bentruyman/md/compare/0.1.1...0.1.2) (2025-10-24)
 
 ### Bug Fixes

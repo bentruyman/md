@@ -4,7 +4,9 @@
   "private": false,
   "license": "MIT",
   "type": "module",
-  "bin": "./dist/index.js",
+  "bin": {
+    "md": "./dist/index.js"
+  },
   "files": [
     "dist"
   ],

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/bentruyman/md/compare/0.1.1...0.1.2) (2025-10-24)
+
+### Bug Fixes
+
+- nvm, needed that bin entry
+  ([0dadf49](https://github.com/bentruyman/md/commit/0dadf49915c74c7ddb29ecef3a8df7bfe682331b))
+
 ## [0.1.1](https://github.com/bentruyman/md/compare/0.1.0...0.1.1) (2025-10-24)
 
 ### Bug Fixes

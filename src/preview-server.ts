@@ -1,5 +1,8 @@
+import fs from "node:fs/promises";
 import type { ServerResponse } from "node:http";
 import http from "node:http";
+import { createRequire } from "node:module";
+import path from "node:path";
 
 export interface BroadcastPayload {
   html: string;
@@ -22,6 +25,57 @@ interface CreatePreviewServerOptions {
   initialFullPath: string;
 }
 
+const require = createRequire(import.meta.url);
+const mermaidAssetCache = new Map<string, string>();
+const mermaidAssetErrors = new Map<string, Error>();
+let mermaidDistDir: string | undefined;
+
+async function loadMermaidAsset(requestPath: string): Promise<string> {
+  const cachedError = mermaidAssetErrors.get(requestPath);
+  if (cachedError) {
+    throw cachedError;
+  }
+
+  const cachedSource = mermaidAssetCache.get(requestPath);
+  if (cachedSource) {
+    return cachedSource;
+  }
+
+  try {
+    const normalizedRequest = requestPath.startsWith("/")
+      ? requestPath.slice(1)
+      : requestPath;
+
+    let resolvedFile: string;
+    if (normalizedRequest === "mermaid.js") {
+      resolvedFile = require.resolve("mermaid/dist/mermaid.esm.mjs");
+    } else {
+      if (!mermaidDistDir) {
+        const mainPath = require.resolve("mermaid/dist/mermaid.esm.mjs");
+        mermaidDistDir = path.dirname(mainPath);
+      }
+      const candidate = path.join(mermaidDistDir, normalizedRequest);
+      const relative = path.relative(mermaidDistDir, candidate);
+      if (
+        !mermaidDistDir ||
+        relative.startsWith("..") ||
+        path.isAbsolute(relative)
+      ) {
+        throw new Error("Invalid Mermaid asset path");
+      }
+      resolvedFile = candidate;
+    }
+
+    const source = await fs.readFile(resolvedFile, "utf8");
+    mermaidAssetCache.set(requestPath, source);
+    return source;
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    mermaidAssetErrors.set(requestPath, failure);
+    throw failure;
+  }
+}
+
 export async function createPreviewServer(
   options: CreatePreviewServerOptions,
 ): Promise<PreviewServer> {
@@ -35,7 +89,42 @@ export async function createPreviewServer(
       return;
     }
 
-    if (req.url.startsWith("/events")) {
+    let requestUrl: URL;
+    try {
+      requestUrl = new URL(req.url, "http://127.0.0.1");
+    } catch {
+      res.writeHead(400, { "content-type": "text/plain" });
+      res.end("Bad request");
+      return;
+    }
+
+    const hasNestedSegments = requestUrl.pathname.includes("/", 1);
+    const isJavaScriptRequest = requestUrl.pathname.endsWith(".js");
+
+    if (!hasNestedSegments && isJavaScriptRequest) {
+      void loadMermaidAsset(requestUrl.pathname)
+        .then((source) => {
+          res.writeHead(200, {
+            "content-type": "application/javascript; charset=utf-8",
+            "cache-control": "no-cache, no-store, must-revalidate",
+          });
+          res.end(source);
+        })
+        .catch((error) => {
+          console.error(
+            `[md] Failed to serve Mermaid asset '${requestUrl.pathname}': ${
+              error instanceof Error ? error.message : error
+            }`,
+          );
+          res.writeHead(404, {
+            "content-type": "text/plain; charset=utf-8",
+          });
+          res.end("Mermaid asset not found.");
+        });
+      return;
+    }
+
+    if (requestUrl.pathname === "/events") {
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache, no-store, must-revalidate",
@@ -360,6 +449,129 @@ function buildHtmlShell(initialFileName: string): string {
       }
 
       .code-copy svg {
+        display: block;
+        width: 16px;
+        height: 16px;
+        fill: currentColor;
+      }
+
+      .diagram {
+        position: relative;
+        margin: 1.2rem 0;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border-color);
+        background: var(--code-bg);
+        padding: 1rem 1rem 1.1rem;
+        box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+      }
+
+      .diagram-target {
+        display: none;
+        overflow: auto;
+      }
+
+      .diagram-target svg {
+        display: block;
+        max-width: 100%;
+      }
+
+      .diagram-message {
+        margin: 0;
+        font-size: 0.9rem;
+        color: var(--muted-color);
+        padding-right: 2.5rem;
+      }
+
+      .diagram[data-diagram-state="rendered"] .diagram-message {
+        display: none;
+      }
+
+      .diagram[data-diagram-state="error"] .diagram-message {
+        color: #f85149;
+      }
+
+      body[data-theme="dark"] .diagram[data-diagram-state="error"] .diagram-message {
+        color: #ff7b72;
+      }
+
+      .diagram-source {
+        display: none;
+        margin: 0.85rem 0 0;
+        font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        border-radius: 0.55rem;
+        padding: 0.65rem 0.8rem;
+        border: 1px solid rgba(125, 133, 144, 0.35);
+        background: rgba(22, 27, 34, 0.5);
+        overflow: auto;
+      }
+
+      body[data-theme="light"] .diagram-source {
+        background: rgba(246, 248, 250, 0.85);
+        border-color: rgba(208, 215, 222, 0.8);
+      }
+
+      .diagram[data-diagram-state="error"] .diagram-source,
+      .diagram[data-diagram-state="unsupported"] .diagram-source {
+        display: block;
+      }
+
+      .diagram[data-diagram-state="rendered"] .diagram-target {
+        display: block;
+      }
+
+      .diagram-copy {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        border: 1px solid rgba(125, 133, 144, 0.35);
+        background: rgba(22, 27, 34, 0.75);
+        color: inherit;
+        padding: 0.6rem;
+        border-radius: 0.38rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease-in-out, border-color 0.15s ease-in-out, color 0.15s ease-in-out;
+      }
+
+      body[data-theme="light"] .diagram-copy {
+        background: rgba(246, 248, 250, 0.85);
+        border-color: rgba(208, 215, 222, 0.8);
+      }
+
+      .diagram-copy:hover,
+      .diagram-copy:focus-visible {
+        background: rgba(125, 133, 144, 0.25);
+        border-color: rgba(125, 133, 144, 0.45);
+      }
+
+      body[data-theme="light"] .diagram-copy:hover,
+      body[data-theme="light"] .diagram-copy:focus-visible {
+        background: rgba(9, 105, 218, 0.1);
+        border-color: rgba(9, 105, 218, 0.3);
+      }
+
+      .diagram-copy.is-copied {
+        border-color: rgba(31, 136, 61, 0.55);
+        color: #1f883d;
+        background: rgba(31, 136, 61, 0.12);
+      }
+
+      body[data-theme="dark"] .diagram-copy.is-copied {
+        color: #3fb950;
+        border-color: rgba(63, 185, 80, 0.6);
+        background: rgba(63, 185, 80, 0.15);
+      }
+
+      .diagram-copy:focus-visible {
+        outline: 2px solid var(--link-color);
+        outline-offset: 2px;
+      }
+
+      .diagram-copy svg {
         display: block;
         width: 16px;
         height: 16px;
@@ -808,6 +1020,8 @@ function buildHtmlShell(initialFileName: string): string {
       const sourceName = document.getElementById("source-name");
       const updatedAt = document.getElementById("updated-at");
       const themeToggle = document.getElementById("theme-toggle");
+      let mermaidModule;
+      let mermaidLoadError;
 
       const writeToClipboard = async (text) => {
         if (navigator.clipboard?.writeText) {
@@ -826,6 +1040,31 @@ function buildHtmlShell(initialFileName: string): string {
         document.body.removeChild(textarea);
       };
 
+      const COPY_SUCCESS_ICON =
+        '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path></svg>';
+
+      const setupCopyButton = (button, getText) => {
+        if (!button || button.dataset.enhanced === "true") {
+          return;
+        }
+        const initialIcon = button.innerHTML;
+        button.dataset.enhanced = "true";
+        button.addEventListener("click", async () => {
+          const text = getText();
+          try {
+            await writeToClipboard(text);
+            button.classList.add("is-copied");
+            button.innerHTML = COPY_SUCCESS_ICON;
+          } catch (error) {
+            console.error("[md] Failed to copy text", error);
+          }
+          setTimeout(() => {
+            button.classList.remove("is-copied");
+            button.innerHTML = initialIcon;
+          }, 1800);
+        });
+      };
+
       const enhanceCodeBlocks = (root) => {
         const blocks = root?.querySelectorAll?.(".code-block") ?? [];
         blocks.forEach((block) => {
@@ -841,26 +1080,181 @@ function buildHtmlShell(initialFileName: string): string {
 
           const copyButton = block.querySelector(".code-copy");
           if (copyButton) {
-            const initialIcon = copyButton.innerHTML;
-            const successIcon =
-              '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path></svg>';
-            copyButton.addEventListener("click", async () => {
-              const text = codeElement.textContent ?? "";
-              try {
-                await writeToClipboard(text);
-                copyButton.classList.add("is-copied");
-                copyButton.innerHTML = successIcon;
-              } catch (error) {
-                console.error("[md] Failed to copy code", error);
-              }
-              setTimeout(() => {
-                copyButton.classList.remove("is-copied");
-                copyButton.innerHTML = initialIcon;
-              }, 1800);
-            });
+            setupCopyButton(copyButton, () => codeElement.textContent ?? "");
+          }
+        });
+      };
+
+      const enhanceDiagrams = (root) => {
+        const diagrams = root?.querySelectorAll?.("[data-diagram-kind]") ?? [];
+        diagrams.forEach((diagram) => {
+          if (diagram.dataset.diagramEnhanced === "true") {
+            return;
+          }
+          diagram.dataset.diagramEnhanced = "true";
+
+          const message = diagram.querySelector("[data-diagram-message]");
+          if (message && !diagram.dataset.diagramMessageDefault) {
+            diagram.dataset.diagramMessageDefault = message.textContent ?? "";
           }
 
+          const copyButton = diagram.querySelector("[data-diagram-copy]");
+          const source = diagram.querySelector("[data-diagram-source]");
+          if (copyButton && source) {
+            setupCopyButton(copyButton, () => source.textContent ?? "");
+          }
         });
+      };
+
+      const resetDiagramMessage = (diagram) => {
+        const message = diagram.querySelector("[data-diagram-message]");
+        if (message) {
+          message.textContent = diagram.dataset.diagramMessageDefault ?? "";
+        }
+      };
+
+      const setDiagramMessage = (diagram, text) => {
+        const message = diagram.querySelector("[data-diagram-message]");
+        if (message) {
+          message.textContent = text;
+        }
+      };
+
+      const loadMermaid = async () => {
+        if (mermaidModule) {
+          return mermaidModule;
+        }
+        if (mermaidLoadError) {
+          throw mermaidLoadError;
+        }
+        try {
+          const mod = await import("/mermaid.js");
+          mermaidModule = mod.default ?? mod;
+          return mermaidModule;
+        } catch (error) {
+          mermaidLoadError = error instanceof Error ? error : new Error(String(error));
+          throw mermaidLoadError;
+        }
+      };
+
+      const renderMermaidDiagrams = async (root, { force = false } = {}) => {
+        const diagrams = root?.querySelectorAll?.('[data-diagram-kind="mermaid"]') ?? [];
+        if (diagrams.length === 0) {
+          return;
+        }
+
+        let mermaid;
+        try {
+          mermaid = await loadMermaid();
+        } catch (error) {
+          console.error("[md] Failed to load Mermaid library", error);
+          diagrams.forEach((diagram) => {
+            diagram.dataset.diagramState = "error";
+            setDiagramMessage(diagram, "Mermaid library failed to load.");
+          });
+          return;
+        }
+
+        const theme = document.body.dataset.theme === "dark" ? "dark" : "default";
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme,
+        });
+
+        for (const diagram of diagrams) {
+          if (!force && diagram.dataset.diagramState === "rendered") {
+            continue;
+          }
+
+          if (force && diagram.dataset.diagramState === "rendered") {
+            diagram.dataset.diagramState = "pending";
+          }
+
+          const target = diagram.querySelector("[data-diagram-target]");
+          const source = diagram.querySelector("[data-diagram-source]");
+          if (!target || !source) {
+            continue;
+          }
+
+          const definition = source.textContent ?? "";
+          if (!definition.trim()) {
+            diagram.dataset.diagramState = "error";
+            setDiagramMessage(diagram, "Mermaid diagram is empty.");
+            continue;
+          }
+
+          target.innerHTML = "";
+          target.style.display = "block";
+          target.style.visibility = "visible";
+          diagram.dataset.diagramState = "rendering";
+          resetDiagramMessage(diagram);
+
+          const container = document.createElement("div");
+          container.classList.add("mermaid");
+          container.textContent = definition;
+          target.appendChild(container);
+
+          try {
+            await mermaid.parse(definition);
+          } catch (error) {
+            diagram.dataset.diagramState = "error";
+            setDiagramMessage(diagram, "Mermaid diagram could not be parsed.");
+            console.error("[md] Mermaid syntax error", error);
+            continue;
+          }
+
+          try {
+            await mermaid.run({
+              nodes: [container],
+              suppressErrors: true,
+            });
+
+            const svgElement = target.querySelector("svg");
+            if (!svgElement) {
+              throw new Error("Mermaid did not produce an SVG element.");
+            }
+
+            svgElement.style.display = "block";
+            svgElement.style.maxWidth = "100%";
+            svgElement.style.height = "auto";
+            svgElement.style.aspectRatio = "auto";
+            svgElement.style.width = "100%";
+
+            diagram.dataset.diagramState = "rendered";
+            resetDiagramMessage(diagram);
+            console.debug("[md] Mermaid diagram rendered", {
+              hasSvg: true,
+              targetHtml: target.innerHTML.slice(0, 1200),
+              targetDisplay: target.style.display,
+              targetVisibility: target.style.visibility,
+              svgAttributes: {
+                width: svgElement.getAttribute("width"),
+                height: svgElement.getAttribute("height"),
+                style: svgElement.getAttribute("style"),
+              },
+              svgStyles: {
+                display: getComputedStyle(svgElement).display,
+                width: getComputedStyle(svgElement).width,
+                height: getComputedStyle(svgElement).height,
+                visibility: getComputedStyle(svgElement).visibility,
+              },
+              containerStyles: {
+                display: getComputedStyle(container).display,
+                height: getComputedStyle(container).height,
+                width: getComputedStyle(container).width,
+              },
+            });
+          } catch (error) {
+            diagram.dataset.diagramState = "error";
+            setDiagramMessage(diagram, "Unable to render Mermaid diagram.");
+            console.error("[md] Failed to render Mermaid diagram", error);
+          }
+        }
+      };
+
+      const renderDiagrams = (root, options) => {
+        void renderMermaidDiagrams(root, options);
       };
 
       const getStoredTheme = () => window.localStorage.getItem(STORAGE_KEY);
@@ -881,6 +1275,7 @@ function buildHtmlShell(initialFileName: string): string {
       prefersDark.addEventListener("change", (event) => {
         if (!getStoredTheme()) {
           applyTheme(event.matches ? "dark" : "light");
+          renderDiagrams(app, { force: true });
         }
       });
 
@@ -888,6 +1283,7 @@ function buildHtmlShell(initialFileName: string): string {
         const nextTheme = document.body.dataset.theme === "dark" ? "light" : "dark";
         applyTheme(nextTheme);
         setStoredTheme(nextTheme);
+        renderDiagrams(app, { force: true });
       });
 
       const eventSource = new EventSource("/events");
@@ -927,9 +1323,13 @@ function buildHtmlShell(initialFileName: string): string {
         }).format(new Date(payload.updatedAt));
         app.innerHTML = payload.html;
         enhanceCodeBlocks(app);
+        enhanceDiagrams(app);
+        renderDiagrams(app);
       });
 
       enhanceCodeBlocks(app);
+      enhanceDiagrams(app);
+      renderDiagrams(app);
     </script>
   </body>
 </html>`;

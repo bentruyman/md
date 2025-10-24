@@ -3,8 +3,11 @@ import type { Tokens } from "marked";
 import { marked } from "marked";
 import { emojify } from "node-emoji";
 
+type DiagramLanguage = "mermaid" | "plantuml";
+
 const PLAIN_LANGUAGE = "plaintext";
 const DIFF_LANGUAGES = new Set(["diff"]);
+const DIAGRAM_LANGUAGES = new Set<DiagramLanguage>(["mermaid", "plantuml"]);
 
 const LANGUAGE_ALIASES: Record<string, string> = {
   console: "bash",
@@ -23,6 +26,9 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   jsx: "jsx",
   ts: "typescript",
   typescript: "typescript",
+  mermaid: "mermaid",
+  plantuml: "plantuml",
+  puml: "plantuml",
   yml: "yaml",
   md: "markdown",
   "c#": "csharp",
@@ -40,6 +46,7 @@ export function renderMarkdown(markdown: string): string {
   const renderer = new marked.Renderer();
   const slugCounts = new Map<string, number>();
   let codeBlockId = 0;
+  let diagramId = 0;
 
   renderer.heading = ({ tokens, depth, text }) => {
     const slug = createSlug(text, slugCounts);
@@ -88,13 +95,23 @@ ${bodyHtml}
   };
 
   renderer.code = ({ text, lang }) => {
-    codeBlockId += 1;
-    const blockId = `code-block-${codeBlockId}`;
-
     const normalizedLanguage =
       typeof lang === "string" && lang.trim().length > 0
         ? normalizeLanguage(lang)
         : undefined;
+
+    if (normalizedLanguage && isDiagramLanguage(normalizedLanguage)) {
+      diagramId += 1;
+      const targetId = createDiagramTargetId(normalizedLanguage, diagramId);
+      return renderDiagram({
+        kind: normalizedLanguage,
+        source: text,
+        targetId,
+      });
+    }
+
+    codeBlockId += 1;
+    const blockId = `code-block-${codeBlockId}`;
 
     const codeContent = normalizeNewlines(text);
     const { value: highlighted, language: detected } = highlightCode(
@@ -341,9 +358,69 @@ function parseCallout(token: Tokens.Blockquote): CalloutMatch | undefined {
   };
 }
 
+interface DiagramMetadata {
+  label: string;
+  initialState: "pending" | "unsupported";
+  message: string;
+  copyLabel: string;
+}
+
+interface RenderDiagramOptions {
+  kind: DiagramLanguage;
+  source: string;
+  targetId: string;
+}
+
+const DIAGRAM_METADATA: Record<DiagramLanguage, DiagramMetadata> = {
+  mermaid: {
+    label: "Mermaid",
+    initialState: "pending",
+    message: "Rendering Mermaid diagram...",
+    copyLabel: "Copy Mermaid source",
+  },
+  plantuml: {
+    label: "PlantUML",
+    initialState: "unsupported",
+    message:
+      "PlantUML preview requires an external renderer. The source is shown below.",
+    copyLabel: "Copy PlantUML source",
+  },
+};
+
+function renderDiagram(options: RenderDiagramOptions): string {
+  const metadata = DIAGRAM_METADATA[options.kind];
+  const safeSource = escapeHtml(normalizeNewlines(options.source));
+  const figureClasses = `diagram diagram-${options.kind}`;
+  const ariaLabel = `${metadata.label} diagram`;
+
+  return `<figure class="${figureClasses}" data-diagram-kind="${options.kind}" data-diagram-state="${metadata.initialState}">
+  <div class="diagram-target" id="${options.targetId}" data-diagram-target="${options.targetId}" role="img" aria-label="${escapeHtml(ariaLabel)}"></div>
+  <p class="diagram-message" data-diagram-message>${escapeHtml(metadata.message)}</p>
+  <pre class="diagram-source" data-diagram-source="${options.targetId}"><code>${safeSource}</code></pre>
+  <button type="button" class="diagram-copy" data-diagram-copy="${options.targetId}" aria-label="${escapeHtml(metadata.copyLabel)}">
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path>
+      <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path>
+    </svg>
+  </button>
+</figure>
+`;
+}
+
+function createDiagramTargetId(kind: DiagramLanguage, id: number): string {
+  return `diagram-${kind}-${id}`;
+}
+
 function normalizeLanguage(language: string): string {
   const lower = language.toLowerCase();
   return LANGUAGE_ALIASES[lower] ?? lower;
+}
+
+function isDiagramLanguage(language?: string): language is DiagramLanguage {
+  if (!language) {
+    return false;
+  }
+  return DIAGRAM_LANGUAGES.has(language as DiagramLanguage);
 }
 
 function isDiffLanguage(language?: string): boolean {

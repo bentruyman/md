@@ -75,4 +75,26 @@ describe("renderMarkdown", () => {
     expect(html).toContain("<summary>Toggle</summary>");
     expect(html).toContain("Hidden");
   });
+
+  it("wraps mermaid fences in diagram markup", () => {
+    const markdown = "```mermaid\ngraph TD; A-->B;\n```\n";
+    const html = renderMarkdown(markdown);
+    expect(html).toContain('class="diagram diagram-mermaid"');
+    expect(html).toContain('data-diagram-kind="mermaid"');
+    expect(html).toContain("Rendering Mermaid diagram...");
+    expect(html).toContain("data-diagram-copy");
+    expect(html).toContain("graph TD; A--&gt;B;");
+  });
+
+  it("marks plantuml fences as unsupported diagrams", () => {
+    const markdown = "```plantuml\n@startuml\nA -> B\n@enduml\n```\n";
+    const html = renderMarkdown(markdown);
+    expect(html).toContain('class="diagram diagram-plantuml"');
+    expect(html).toContain('data-diagram-kind="plantuml"');
+    expect(html).toContain(
+      "PlantUML preview requires an external renderer. The source is shown below.",
+    );
+    expect(html).toContain("@startuml");
+    expect(html).toContain("A -&gt; B");
+  });
 });

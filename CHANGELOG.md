@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/bentruyman/md/compare/0.1.0...0.1.1) (2025-10-24)
+
+### Bug Fixes
+
+- use only one bin so `npx @truyman/md` works
+  ([4e89457](https://github.com/bentruyman/md/commit/4e8945771e57987b58e950755e935f6d2c55b530))
+
 # 0.1.0 (2025-10-24)
 
 ### Features

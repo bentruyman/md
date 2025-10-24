@@ -1,0 +1,60 @@
+{
+  "name": "@truyman/md",
+  "version": "0.1.0",
+  "private": false,
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "md": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node",
+    "lint": "eslint --fix . && prettier --write .",
+    "prepare": "husky",
+    "prepublishOnly": "bun run build",
+    "release": "release-it",
+    "test": "bun test"
+  },
+  "lint-staged": {
+    "*.{json,md}": [
+      "prettier --write"
+    ],
+    "*.{mjs,ts}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  },
+  "prettier": {
+    "plugins": [
+      "prettier-plugin-organize-imports",
+      "prettier-plugin-packagejson"
+    ],
+    "proseWrap": "always"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "marked": "^16.4.1",
+    "node-emoji": "^2.2.0"
+  },
+  "devDependencies": {
+    "@release-it/conventional-changelog": "^8.0.2",
+    "@types/node": "^24.9.1",
+    "bun-types": "^1.3.1",
+    "eslint": "^9.38.0",
+    "eslint-config-unjs": "^0.5.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
+    "prettier": "^3.6.2",
+    "prettier-plugin-organize-imports": "^4.3.0",
+    "prettier-plugin-packagejson": "^2.5.19",
+    "release-it": "^19.0.0",
+    "typescript": "~5.9"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

@@ -1,0 +1,10 @@
+.env
+coverage/
+dist/
+node_modules/
+
+.beads/md.db
+.beads/md.sock
+.beads/daemon.lock
+.beads/daemon.log
+.beads/daemon.pid

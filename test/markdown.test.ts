@@ -85,16 +85,4 @@ describe("renderMarkdown", () => {
     expect(html).toContain("data-diagram-copy");
     expect(html).toContain("graph TD; A--&gt;B;");
   });
-
-  it("marks plantuml fences as unsupported diagrams", () => {
-    const markdown = "```plantuml\n@startuml\nA -> B\n@enduml\n```\n";
-    const html = renderMarkdown(markdown);
-    expect(html).toContain('class="diagram diagram-plantuml"');
-    expect(html).toContain('data-diagram-kind="plantuml"');
-    expect(html).toContain(
-      "PlantUML preview requires an external renderer. The source is shown below.",
-    );
-    expect(html).toContain("@startuml");
-    expect(html).toContain("A -&gt; B");
-  });
 });

@@ -3,11 +3,11 @@ import type { Tokens } from "marked";
 import { marked } from "marked";
 import { emojify } from "node-emoji";
 
-type DiagramLanguage = "mermaid" | "plantuml";
+type DiagramLanguage = "mermaid";
 
 const PLAIN_LANGUAGE = "plaintext";
 const DIFF_LANGUAGES = new Set(["diff"]);
-const DIAGRAM_LANGUAGES = new Set<DiagramLanguage>(["mermaid", "plantuml"]);
+const DIAGRAM_LANGUAGES = new Set<DiagramLanguage>(["mermaid"]);
 
 const LANGUAGE_ALIASES: Record<string, string> = {
   console: "bash",
@@ -27,8 +27,6 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   ts: "typescript",
   typescript: "typescript",
   mermaid: "mermaid",
-  plantuml: "plantuml",
-  puml: "plantuml",
   yml: "yaml",
   md: "markdown",
   "c#": "csharp",
@@ -377,13 +375,6 @@ const DIAGRAM_METADATA: Record<DiagramLanguage, DiagramMetadata> = {
     initialState: "pending",
     message: "Rendering Mermaid diagram...",
     copyLabel: "Copy Mermaid source",
-  },
-  plantuml: {
-    label: "PlantUML",
-    initialState: "unsupported",
-    message:
-      "PlantUML preview requires an external renderer. The source is shown below.",
-    copyLabel: "Copy PlantUML source",
   },
 };
 

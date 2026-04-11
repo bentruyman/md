@@ -13,6 +13,9 @@ you work, and the browser stays in sync.
 npm install -g @truyman/md
 ```
 
+For local development and releases, this repo follows the Bun CLI template
+conventions while still publishing a standard npm package.
+
 ## Features
 
 - Live preview that reloads as you save your Markdown.
@@ -44,6 +47,25 @@ When you run `md`, it will:
 1. Start a local preview server on an available port.
 2. Open your browser automatically.
 3. Re-render the page whenever the target file changes.
+
+## Development
+
+Install dependencies with Bun:
+
+```console
+bun install
+```
+
+Common scripts:
+
+- `bun run format` formats the repo with `oxfmt` and applies `oxlint --fix`.
+- `bun run lint` checks formatting and lint rules without rewriting files.
+- `bun run typecheck` runs TypeScript in Bun-oriented no-emit mode.
+- `bun test` runs the Bun test suite.
+- `bun run build` bundles the CLI to `dist/`.
+- `bun run verify` runs lint, typecheck, tests, and build.
+- `bun run release` runs the release-it workflow and keeps `CHANGELOG.md`
+  updated.
 
 ## License
 

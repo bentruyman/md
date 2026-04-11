@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { renderMarkdown } from "../src/markdown.js";
 
 describe("renderMarkdown", () => {

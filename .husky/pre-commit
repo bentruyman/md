@@ -1,2 +1,3 @@
 bunx lint-staged
 bunx tsc
+bun test

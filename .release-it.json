@@ -1,10 +1,13 @@
 {
   "$schema": "https://unpkg.com/release-it/schema/release-it.json",
+  "git": {
+    "commitMessage": "chore: release v${version}"
+  },
   "github": {
     "release": true
   },
   "npm": {
-    "skipChecks": true
+    "publish": true
   },
   "plugins": {
     "@release-it/conventional-changelog": {
@@ -13,5 +16,9 @@
       },
       "infile": "CHANGELOG.md"
     }
+  },
+  "hooks": {
+    "before:init": ["bun run typecheck", "bun test"],
+    "after:bump": "bun run build"
   }
 }

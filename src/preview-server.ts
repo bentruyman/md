@@ -30,6 +30,51 @@ const mermaidAssetCache = new Map<string, string>();
 const mermaidAssetErrors = new Map<string, Error>();
 let mermaidDistDir: string | undefined;
 
+const PREVIEW_ASSET_ROUTE = "/__preview_asset";
+
+const MIME_TYPES: Record<string, string> = {
+  ".apng": "image/apng",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".gif": "image/gif",
+  ".ico": "image/x-icon",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+  ".webp": "image/webp",
+};
+
+export function createPreviewAssetUrl(sourcePath: string): string {
+  if (!isRelativeAssetPath(sourcePath)) {
+    return sourcePath;
+  }
+
+  return `${PREVIEW_ASSET_ROUTE}?source=${encodeURIComponent(sourcePath)}`;
+}
+
+export function resolvePreviewAssetPath(
+  rawPath: string | null | undefined,
+  markdownFilePath: string,
+): string | undefined {
+  if (!rawPath) {
+    return undefined;
+  }
+
+  const decoded = safeDecodeURIComponent(rawPath);
+  if (!decoded || decoded.includes("\0")) {
+    return undefined;
+  }
+
+  if (!isRelativeAssetPath(decoded)) {
+    return undefined;
+  }
+
+  return path.resolve(path.dirname(markdownFilePath), decoded);
+}
+
 async function loadMermaidAsset(requestPath: string): Promise<string> {
   const cachedError = mermaidAssetErrors.get(requestPath);
   if (cachedError) {
@@ -100,6 +145,8 @@ export async function createPreviewServer(
 
     const hasNestedSegments = requestUrl.pathname.includes("/", 1);
     const isJavaScriptRequest = requestUrl.pathname.endsWith(".js");
+    const activeMarkdownFilePath =
+      lastPayload?.fullPath ?? options.initialFullPath;
 
     if (!hasNestedSegments && isJavaScriptRequest) {
       void loadMermaidAsset(requestUrl.pathname)
@@ -120,6 +167,41 @@ export async function createPreviewServer(
             "content-type": "text/plain; charset=utf-8",
           });
           res.end("Mermaid asset not found.");
+        });
+      return;
+    }
+
+    if (requestUrl.pathname === PREVIEW_ASSET_ROUTE) {
+      const resolvedAssetPath = resolvePreviewAssetPath(
+        requestUrl.searchParams.get("source"),
+        activeMarkdownFilePath,
+      );
+
+      if (!resolvedAssetPath) {
+        res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+        res.end("Invalid asset path.");
+        return;
+      }
+
+      void fs
+        .readFile(resolvedAssetPath)
+        .then((file) => {
+          res.writeHead(200, {
+            "content-type": getAssetContentType(resolvedAssetPath),
+            "cache-control": "no-cache, no-store, must-revalidate",
+          });
+          res.end(file);
+        })
+        .catch((error) => {
+          console.error(
+            `[md] Failed to serve preview asset '${resolvedAssetPath}': ${
+              error instanceof Error ? error.message : error
+            }`,
+          );
+          res.writeHead(404, {
+            "content-type": "text/plain; charset=utf-8",
+          });
+          res.end("Preview asset not found.");
         });
       return;
     }
@@ -1040,6 +1122,31 @@ function buildHtmlShell(initialFileName: string): string {
         document.body.removeChild(textarea);
       };
 
+      const createPreviewAssetUrl = (sourcePath) => {
+        if (
+          !sourcePath ||
+          sourcePath.startsWith("/") ||
+          sourcePath.startsWith("#") ||
+          sourcePath.startsWith("//") ||
+          /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(sourcePath)
+        ) {
+          return sourcePath;
+        }
+
+        return "/__preview_asset?source=" + encodeURIComponent(sourcePath);
+      };
+
+      const rewriteRelativeImages = (root) => {
+        const images = root?.querySelectorAll?.("img[src]") ?? [];
+        images.forEach((image) => {
+          const sourcePath = image.getAttribute("src");
+          if (!sourcePath) {
+            return;
+          }
+          image.src = createPreviewAssetUrl(sourcePath);
+        });
+      };
+
       const COPY_SUCCESS_ICON =
         '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path></svg>';
 
@@ -1322,6 +1429,7 @@ function buildHtmlShell(initialFileName: string): string {
           second: "numeric",
         }).format(new Date(payload.updatedAt));
         app.innerHTML = payload.html;
+        rewriteRelativeImages(app);
         enhanceCodeBlocks(app);
         enhanceDiagrams(app);
         renderDiagrams(app);
@@ -1333,6 +1441,31 @@ function buildHtmlShell(initialFileName: string): string {
     </script>
   </body>
 </html>`;
+}
+
+function getAssetContentType(filePath: string): string {
+  return (
+    MIME_TYPES[path.extname(filePath).toLowerCase()] ??
+    "application/octet-stream"
+  );
+}
+
+function isRelativeAssetPath(value: string): boolean {
+  return (
+    value.length > 0 &&
+    !value.startsWith("/") &&
+    !value.startsWith("#") &&
+    !/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(value) &&
+    !value.startsWith("//")
+  );
+}
+
+function safeDecodeURIComponent(value: string): string | undefined {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
 }
 
 function escapeHtml(value: string): string {

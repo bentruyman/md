@@ -26,6 +26,8 @@ conventions while still publishing a standard npm package.
 - Mermaid diagrams render inline, include copy buttons, and adapt to the active
   theme.
 - Built-in preview server with automatic light/dark theming.
+- Repo-aware routing for relative Markdown links and assets, similar to GitHub's
+  Markdown preview.
 - Defaults to `README.md` when no file path is provided.
 
 ## Usage
@@ -46,7 +48,13 @@ When you run `md`, it will:
 
 1. Start a local preview server on an available port.
 2. Open your browser automatically.
-3. Re-render the page whenever the target file changes.
+3. Serve your Git repo root from the local preview URL when possible.
+4. Re-render the active preview file whenever it changes.
+
+Relative links resolve like they do on GitHub. If you run `md` from
+`docs/README.md`, the browser opens `/docs/README.md`; links to other Markdown
+files render in the preview, and links or HTML references to images and other
+assets are served directly from the repo.
 
 ## Development
 

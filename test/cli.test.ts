@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   assertReadableFile,
   DEFAULT_TARGET,
+  detectPreviewRoot,
   resolveTargetPath,
 } from "../src/cli.js";
 
@@ -30,6 +31,12 @@ describe("md cli helpers", () => {
   it("rejects directories", async () => {
     await expect(assertReadableFile(process.cwd())).rejects.toThrow(
       "Path is not a file",
+    );
+  });
+
+  it("detects the repository root for preview routing", async () => {
+    await expect(detectPreviewRoot(process.cwd())).resolves.toBe(
+      path.resolve(process.cwd()),
     );
   });
 });

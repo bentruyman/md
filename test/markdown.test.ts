@@ -20,6 +20,26 @@ describe("renderMarkdown", () => {
     expect(html).toContain("<del>strike</del>");
   });
 
+  it("leaves relative markdown links unchanged", () => {
+    const html = renderMarkdown("[Guide](./docs/guide.md#install)");
+
+    expect(html).toContain('href="./docs/guide.md#install"');
+  });
+
+  it("leaves non-markdown, external, and hash links unchanged", () => {
+    const html = renderMarkdown(
+      [
+        "[Section](#details)",
+        "[Site](https://example.com/docs)",
+        "[Image](./images/diagram.png)",
+      ].join("\n\n"),
+    );
+
+    expect(html).toContain('href="#details"');
+    expect(html).toContain('href="https://example.com/docs"');
+    expect(html).toContain('href="./images/diagram.png"');
+  });
+
   it("retains table captions", () => {
     const markdown = `<table><caption>Demo</caption><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>`;
     const html = renderMarkdown(markdown);

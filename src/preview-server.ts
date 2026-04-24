@@ -1,13 +1,23 @@
 import fs from "node:fs/promises";
-import type { ServerResponse } from "node:http";
-import http from "node:http";
+import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
+
+import {
+  PREVIEW_EVENTS_ROUTE,
+  PREVIEW_INTERNAL_PREFIX,
+  PREVIEW_MERMAID_ROUTE,
+  createPreviewSourcePath,
+  resolvePreviewRequestPath,
+} from "./preview-paths.js";
+
+export { resolvePreviewRequestPath } from "./preview-paths.js";
 
 export interface BroadcastPayload {
   html: string;
   fileName: string;
   fullPath: string;
+  sourcePath: string;
   title: string;
   updatedAt: string;
   isError?: boolean;
@@ -23,6 +33,8 @@ export interface PreviewServer {
 interface CreatePreviewServerOptions {
   initialFileName: string;
   initialFullPath: string;
+  previewRootPath: string;
+  navigateToMarkdown(filePath: string): Promise<void>;
 }
 
 const require = createRequire(import.meta.url);
@@ -30,50 +42,36 @@ const mermaidAssetCache = new Map<string, string>();
 const mermaidAssetErrors = new Map<string, Error>();
 let mermaidDistDir: string | undefined;
 
-const PREVIEW_ASSET_ROUTE = "/__preview_asset";
-
 const MIME_TYPES: Record<string, string> = {
   ".apng": "image/apng",
   ".avif": "image/avif",
   ".bmp": "image/bmp",
+  ".css": "text/css; charset=utf-8",
+  ".csv": "text/csv; charset=utf-8",
   ".gif": "image/gif",
+  ".html": "text/html; charset=utf-8",
   ".ico": "image/x-icon",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
   ".jpeg": "image/jpeg",
   ".jpg": "image/jpeg",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".mov": "video/quicktime",
+  ".mp4": "video/mp4",
+  ".otf": "font/otf",
+  ".pdf": "application/pdf",
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".tif": "image/tiff",
   ".tiff": "image/tiff",
+  ".ttf": "font/ttf",
+  ".txt": "text/plain; charset=utf-8",
+  ".wasm": "application/wasm",
+  ".webm": "video/webm",
   ".webp": "image/webp",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
 };
-
-export function createPreviewAssetUrl(sourcePath: string): string {
-  if (!isRelativeAssetPath(sourcePath)) {
-    return sourcePath;
-  }
-
-  return `${PREVIEW_ASSET_ROUTE}?source=${encodeURIComponent(sourcePath)}`;
-}
-
-export function resolvePreviewAssetPath(
-  rawPath: string | null | undefined,
-  markdownFilePath: string,
-): string | undefined {
-  if (!rawPath) {
-    return undefined;
-  }
-
-  const decoded = safeDecodeURIComponent(rawPath);
-  if (!decoded || decoded.includes("\0")) {
-    return undefined;
-  }
-
-  if (!isRelativeAssetPath(decoded)) {
-    return undefined;
-  }
-
-  return path.resolve(path.dirname(markdownFilePath), decoded);
-}
 
 async function loadMermaidAsset(requestPath: string): Promise<string> {
   const cachedError = mermaidAssetErrors.get(requestPath);
@@ -128,6 +126,13 @@ export async function createPreviewServer(
   let lastPayload: BroadcastPayload | undefined;
 
   const server = http.createServer((req, res) => {
+    void handleRequest(req, res);
+  });
+
+  async function handleRequest(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
     if (!req.url) {
       res.writeHead(400, { "content-type": "text/plain" });
       res.end("Bad request");
@@ -143,70 +148,29 @@ export async function createPreviewServer(
       return;
     }
 
-    const hasNestedSegments = requestUrl.pathname.includes("/", 1);
-    const isJavaScriptRequest = requestUrl.pathname.endsWith(".js");
-    const activeMarkdownFilePath =
-      lastPayload?.fullPath ?? options.initialFullPath;
-
-    if (!hasNestedSegments && isJavaScriptRequest) {
-      void loadMermaidAsset(requestUrl.pathname)
-        .then((source) => {
-          res.writeHead(200, {
-            "content-type": "application/javascript; charset=utf-8",
-            "cache-control": "no-cache, no-store, must-revalidate",
-          });
-          res.end(source);
-        })
-        .catch((error) => {
-          console.error(
-            `[md] Failed to serve Mermaid asset '${requestUrl.pathname}': ${
-              error instanceof Error ? error.message : error
-            }`,
-          );
-          res.writeHead(404, {
-            "content-type": "text/plain; charset=utf-8",
-          });
-          res.end("Mermaid asset not found.");
+    if (requestUrl.pathname === PREVIEW_MERMAID_ROUTE) {
+      try {
+        const source = await loadMermaidAsset("mermaid.js");
+        res.writeHead(200, {
+          "content-type": "application/javascript; charset=utf-8",
+          "cache-control": "no-cache, no-store, must-revalidate",
         });
-      return;
-    }
-
-    if (requestUrl.pathname === PREVIEW_ASSET_ROUTE) {
-      const resolvedAssetPath = resolvePreviewAssetPath(
-        requestUrl.searchParams.get("source"),
-        activeMarkdownFilePath,
-      );
-
-      if (!resolvedAssetPath) {
-        res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
-        res.end("Invalid asset path.");
-        return;
+        res.end(source);
+      } catch (error) {
+        console.error(
+          `[md] Failed to serve Mermaid asset '${requestUrl.pathname}': ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+        res.writeHead(404, {
+          "content-type": "text/plain; charset=utf-8",
+        });
+        res.end("Mermaid asset not found.");
       }
-
-      void fs
-        .readFile(resolvedAssetPath)
-        .then((file) => {
-          res.writeHead(200, {
-            "content-type": getAssetContentType(resolvedAssetPath),
-            "cache-control": "no-cache, no-store, must-revalidate",
-          });
-          res.end(file);
-        })
-        .catch((error) => {
-          console.error(
-            `[md] Failed to serve preview asset '${resolvedAssetPath}': ${
-              error instanceof Error ? error.message : error
-            }`,
-          );
-          res.writeHead(404, {
-            "content-type": "text/plain; charset=utf-8",
-          });
-          res.end("Preview asset not found.");
-        });
       return;
     }
 
-    if (requestUrl.pathname === "/events") {
+    if (requestUrl.pathname === PREVIEW_EVENTS_ROUTE) {
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache, no-store, must-revalidate",
@@ -224,6 +188,10 @@ export async function createPreviewServer(
           html: `<p class="placeholder">Watching <code>${escapeHtml(options.initialFullPath)}</code>…</p>`,
           fileName: options.initialFileName,
           fullPath: options.initialFullPath,
+          sourcePath: createPreviewSourcePath(
+            options.initialFullPath,
+            options.previewRootPath,
+          ),
           title: `md — ${options.initialFileName}`,
           updatedAt: new Date().toISOString(),
         });
@@ -235,12 +203,54 @@ export async function createPreviewServer(
       return;
     }
 
+    if (requestUrl.pathname.startsWith(`${PREVIEW_INTERNAL_PREFIX}/`)) {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Not found.");
+      return;
+    }
+
+    const resolvedRoute = await resolvePreviewRequestPath(
+      requestUrl.pathname,
+      options.previewRootPath,
+    );
+
+    if (!resolvedRoute) {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Not found.");
+      return;
+    }
+
+    if (resolvedRoute.kind === "static") {
+      await serveStaticFile(res, resolvedRoute.fullPath);
+      return;
+    }
+
+    try {
+      await options.navigateToMarkdown(resolvedRoute.fullPath);
+    } catch (error) {
+      console.error(
+        `[md] Failed to open preview markdown '${resolvedRoute.fullPath}': ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      res.writeHead(404, {
+        "content-type": "text/plain; charset=utf-8",
+      });
+      res.end("Preview markdown not found.");
+      return;
+    }
+
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-cache, no-store, must-revalidate",
     });
-    res.end(buildHtmlShell(options.initialFileName));
-  });
+    res.end(
+      buildHtmlShell(
+        path.basename(resolvedRoute.fullPath),
+        resolvedRoute.sourcePath,
+      ),
+    );
+  }
 
   const port: number = await new Promise((resolve, reject) => {
     server.listen(0, "127.0.0.1", () => {
@@ -293,7 +303,34 @@ export async function createPreviewServer(
   }
 }
 
-function buildHtmlShell(initialFileName: string): string {
+async function serveStaticFile(
+  res: ServerResponse,
+  filePath: string,
+): Promise<void> {
+  try {
+    const file = await fs.readFile(filePath);
+    res.writeHead(200, {
+      "content-type": getAssetContentType(filePath),
+      "cache-control": "no-cache, no-store, must-revalidate",
+    });
+    res.end(file);
+  } catch (error) {
+    console.error(
+      `[md] Failed to serve static file '${filePath}': ${
+        error instanceof Error ? error.message : error
+      }`,
+    );
+    res.writeHead(404, {
+      "content-type": "text/plain; charset=utf-8",
+    });
+    res.end("Static file not found.");
+  }
+}
+
+function buildHtmlShell(
+  initialFileName: string,
+  initialSourcePath: string,
+): string {
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -1095,6 +1132,9 @@ function buildHtmlShell(initialFileName: string): string {
     </main>
     <script type="module">
       const STORAGE_KEY = "md-preview-theme";
+      const PREVIEW_EVENTS_ROUTE = ${JSON.stringify(PREVIEW_EVENTS_ROUTE)};
+      const PREVIEW_MERMAID_ROUTE = ${JSON.stringify(PREVIEW_MERMAID_ROUTE)};
+      const initialSourcePath = ${JSON.stringify(initialSourcePath)};
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
       const status = document.getElementById("status");
       const app = document.getElementById("app");
@@ -1104,6 +1144,7 @@ function buildHtmlShell(initialFileName: string): string {
       const themeToggle = document.getElementById("theme-toggle");
       let mermaidModule;
       let mermaidLoadError;
+      let lastRenderedSourcePath = initialSourcePath;
 
       const writeToClipboard = async (text) => {
         if (navigator.clipboard?.writeText) {
@@ -1122,29 +1163,27 @@ function buildHtmlShell(initialFileName: string): string {
         document.body.removeChild(textarea);
       };
 
-      const createPreviewAssetUrl = (sourcePath) => {
-        if (
-          !sourcePath ||
-          sourcePath.startsWith("/") ||
-          sourcePath.startsWith("#") ||
-          sourcePath.startsWith("//") ||
-          /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(sourcePath)
-        ) {
-          return sourcePath;
+      const buildPreviewPageUrl = (sourcePath, hash = "") => {
+        const url = new URL(window.location.href);
+        url.pathname =
+          "/" +
+          sourcePath
+            .split("/")
+            .filter(Boolean)
+            .map((segment) => encodeURIComponent(segment))
+            .join("/");
+        url.search = "";
+        url.hash = "";
+        if (hash) {
+          url.hash = hash.startsWith("#") ? hash : "#" + hash;
         }
-
-        return "/__preview_asset?source=" + encodeURIComponent(sourcePath);
+        return url;
       };
 
-      const rewriteRelativeImages = (root) => {
-        const images = root?.querySelectorAll?.("img[src]") ?? [];
-        images.forEach((image) => {
-          const sourcePath = image.getAttribute("src");
-          if (!sourcePath) {
-            return;
-          }
-          image.src = createPreviewAssetUrl(sourcePath);
-        });
+      const createPreviewContent = (html) => {
+        const template = document.createElement("template");
+        template.innerHTML = html;
+        return template.content;
       };
 
       const COPY_SUCCESS_ICON =
@@ -1235,7 +1274,7 @@ function buildHtmlShell(initialFileName: string): string {
           throw mermaidLoadError;
         }
         try {
-          const mod = await import("/mermaid.js");
+          const mod = await import(PREVIEW_MERMAID_ROUTE);
           mermaidModule = mod.default ?? mod;
           return mermaidModule;
         } catch (error) {
@@ -1364,6 +1403,28 @@ function buildHtmlShell(initialFileName: string): string {
         void renderMermaidDiagrams(root, options);
       };
 
+      const scrollToLocationTarget = (sourceChanged) => {
+        const rawHash = window.location.hash;
+        if (rawHash.length > 1) {
+          let targetId = rawHash.slice(1);
+          try {
+            targetId = decodeURIComponent(targetId);
+          } catch {
+            // Ignore malformed hashes and fall back to default scrolling.
+          }
+
+          const target = document.getElementById(targetId);
+          if (target) {
+            target.scrollIntoView();
+            return;
+          }
+        }
+
+        if (sourceChanged) {
+          window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+        }
+      };
+
       const getStoredTheme = () => window.localStorage.getItem(STORAGE_KEY);
       const setStoredTheme = (theme) => window.localStorage.setItem(STORAGE_KEY, theme);
 
@@ -1393,7 +1454,7 @@ function buildHtmlShell(initialFileName: string): string {
         renderDiagrams(app, { force: true });
       });
 
-      const eventSource = new EventSource("/events");
+      const eventSource = new EventSource(PREVIEW_EVENTS_ROUTE);
 
       eventSource.addEventListener("open", () => {
         status.hidden = true;
@@ -1408,6 +1469,20 @@ function buildHtmlShell(initialFileName: string): string {
 
       eventSource.addEventListener("message", (event) => {
         const payload = JSON.parse(event.data);
+        const sourceChanged = payload.sourcePath !== lastRenderedSourcePath;
+
+        const expectedPath = buildPreviewPageUrl(
+          payload.sourcePath,
+          window.location.hash,
+        ).pathname;
+        if (window.location.pathname !== expectedPath) {
+          window.history.replaceState(
+            {},
+            "",
+            buildPreviewPageUrl(payload.sourcePath, window.location.hash),
+          );
+        }
+
         if (payload.isError) {
           app.classList.add("is-error");
           status.hidden = false;
@@ -1428,11 +1503,12 @@ function buildHtmlShell(initialFileName: string): string {
           minute: "numeric",
           second: "numeric",
         }).format(new Date(payload.updatedAt));
-        app.innerHTML = payload.html;
-        rewriteRelativeImages(app);
+        app.replaceChildren(createPreviewContent(payload.html));
         enhanceCodeBlocks(app);
         enhanceDiagrams(app);
         renderDiagrams(app);
+        scrollToLocationTarget(sourceChanged);
+        lastRenderedSourcePath = payload.sourcePath;
       });
 
       enhanceCodeBlocks(app);
@@ -1448,24 +1524,6 @@ function getAssetContentType(filePath: string): string {
     MIME_TYPES[path.extname(filePath).toLowerCase()] ??
     "application/octet-stream"
   );
-}
-
-function isRelativeAssetPath(value: string): boolean {
-  return (
-    value.length > 0 &&
-    !value.startsWith("/") &&
-    !value.startsWith("#") &&
-    !/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(value) &&
-    !value.startsWith("//")
-  );
-}
-
-function safeDecodeURIComponent(value: string): string | undefined {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return undefined;
-  }
 }
 
 function escapeHtml(value: string): string {

@@ -1,5 +1,17 @@
 # Changelog
 
+# [0.2.0](https://github.com/bentruyman/md/compare/0.1.3...0.2.0) (2026-04-24)
+
+### Bug Fixes
+
+- render relative preview images
+  ([2a73f71](https://github.com/bentruyman/md/commit/2a73f7145315a5cbd2fd2de499817fa19e4068cb))
+
+### Features
+
+- add repo-aware preview routing
+  ([8849bcb](https://github.com/bentruyman/md/commit/8849bcbe5bc972065f4f87cdd21cf6c20c5f1875))
+
 ## [0.1.3](https://github.com/bentruyman/md/compare/0.1.2...0.1.3) (2025-10-24)
 
 ### Bad Release

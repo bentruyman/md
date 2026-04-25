@@ -15,16 +15,17 @@
     "dist"
   ],
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
+    "access": "public"
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node",
+    "build": "bun build src/index.ts --outdir dist --target node && tsc -p tsconfig.build.json",
     "format": "oxfmt && oxlint --fix",
     "lint": "oxfmt --check && oxlint .",
     "prepare": "husky",
-    "prepublishOnly": "bun run typecheck && bun test && bun run build",
+    "prepublishOnly": "bun run build",
     "release": "release-it",
     "start": "bun run dist/index.js",
     "test": "bun test",

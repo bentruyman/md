@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/bentruyman/md/compare/0.2.0...0.2.1) (2026-04-28)
+
+### Bug Fixes
+
+- correct package manifest metadata
+  ([5f202b1](https://github.com/bentruyman/md/commit/5f202b14b141f5a515e3acea85b3468ea1743eb4))
+- serve Mermaid chunk assets
+  ([fec7818](https://github.com/bentruyman/md/commit/fec781836a2c1b504d504cc56196a215c4950554))
+
 # [0.2.0](https://github.com/bentruyman/md/compare/0.1.3...0.2.0) (2026-04-24)
 
 ### Bug Fixes

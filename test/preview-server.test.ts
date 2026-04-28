@@ -3,7 +3,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { resolvePreviewRequestPath } from "../src/preview-server.js";
+import { PREVIEW_MERMAID_ROUTE } from "../src/preview-paths.js";
+import {
+  createPreviewServer,
+  resolvePreviewRequestPath,
+} from "../src/preview-server.js";
 
 describe("preview route helpers", () => {
   it("resolves markdown routes relative to the preview root", async () => {
@@ -83,6 +87,46 @@ describe("preview route helpers", () => {
       await expect(
         resolvePreviewRequestPath("/empty", repo),
       ).resolves.toBeUndefined();
+    });
+  });
+});
+
+describe("preview server assets", () => {
+  it("serves Mermaid's ESM entrypoint and relative chunks", async () => {
+    await withFixtureRepo(async (repo) => {
+      const markdownPath = path.join(repo, "README.md");
+      await fs.writeFile(markdownPath, "# Test");
+
+      const server = await createPreviewServer({
+        initialFileName: "README.md",
+        initialFullPath: markdownPath,
+        previewRootPath: repo,
+        navigateToMarkdown: async () => {},
+      });
+
+      try {
+        const entryUrl = new URL(PREVIEW_MERMAID_ROUTE, server.url);
+        const entryResponse = await fetch(entryUrl);
+        expect(entryResponse.status).toBe(200);
+        expect(entryResponse.headers.get("content-type")).toContain(
+          "application/javascript",
+        );
+
+        const entrySource = await entryResponse.text();
+        const chunkMatch = entrySource.match(/from "\.\/([^"]+)"/);
+        expect(chunkMatch?.[1]).toBeTruthy();
+
+        const chunkResponse = await fetch(
+          new URL(`./${chunkMatch?.[1]}`, entryUrl),
+        );
+        expect(chunkResponse.status).toBe(200);
+        expect(chunkResponse.headers.get("content-type")).toContain(
+          "application/javascript",
+        );
+        expect(await chunkResponse.text()).toContain("function");
+      } finally {
+        await server.close();
+      }
     });
   });
 });

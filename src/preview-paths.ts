@@ -3,7 +3,8 @@ import path from "node:path";
 
 export const PREVIEW_INTERNAL_PREFIX = "/__md";
 export const PREVIEW_EVENTS_ROUTE = `${PREVIEW_INTERNAL_PREFIX}/events`;
-export const PREVIEW_MERMAID_ROUTE = `${PREVIEW_INTERNAL_PREFIX}/mermaid.js`;
+export const PREVIEW_MERMAID_ASSET_PREFIX = `${PREVIEW_INTERNAL_PREFIX}/mermaid/`;
+export const PREVIEW_MERMAID_ROUTE = `${PREVIEW_MERMAID_ASSET_PREFIX}mermaid.js`;
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
 

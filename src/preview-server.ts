@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   PREVIEW_EVENTS_ROUTE,
   PREVIEW_INTERNAL_PREFIX,
+  PREVIEW_MERMAID_ASSET_PREFIX,
   PREVIEW_MERMAID_ROUTE,
   createPreviewSourcePath,
   resolvePreviewRequestPath,
@@ -38,7 +39,7 @@ interface CreatePreviewServerOptions {
 }
 
 const require = createRequire(import.meta.url);
-const mermaidAssetCache = new Map<string, string>();
+const mermaidAssetCache = new Map<string, Buffer>();
 const mermaidAssetErrors = new Map<string, Error>();
 let mermaidDistDir: string | undefined;
 
@@ -73,7 +74,7 @@ const MIME_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
-async function loadMermaidAsset(requestPath: string): Promise<string> {
+async function loadMermaidAsset(requestPath: string): Promise<Buffer> {
   const cachedError = mermaidAssetErrors.get(requestPath);
   if (cachedError) {
     throw cachedError;
@@ -109,7 +110,7 @@ async function loadMermaidAsset(requestPath: string): Promise<string> {
       resolvedFile = candidate;
     }
 
-    const source = await fs.readFile(resolvedFile, "utf8");
+    const source = await fs.readFile(resolvedFile);
     mermaidAssetCache.set(requestPath, source);
     return source;
   } catch (error) {
@@ -148,11 +149,14 @@ export async function createPreviewServer(
       return;
     }
 
-    if (requestUrl.pathname === PREVIEW_MERMAID_ROUTE) {
+    if (requestUrl.pathname.startsWith(PREVIEW_MERMAID_ASSET_PREFIX)) {
+      const assetPath = requestUrl.pathname.slice(
+        PREVIEW_MERMAID_ASSET_PREFIX.length,
+      );
       try {
-        const source = await loadMermaidAsset("mermaid.js");
+        const source = await loadMermaidAsset(assetPath);
         res.writeHead(200, {
-          "content-type": "application/javascript; charset=utf-8",
+          "content-type": getAssetContentType(assetPath),
           "cache-control": "no-cache, no-store, must-revalidate",
         });
         res.end(source);

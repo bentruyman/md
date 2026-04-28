@@ -6,10 +6,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bentruyman/md.git"
+    "url": "git+https://github.com/bentruyman/md.git"
   },
   "bin": {
-    "md": "./dist/index.js"
+    "md": "dist/index.js"
   },
   "files": [
     "dist"
